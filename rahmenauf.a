@@ -1,0 +1,571 @@
+!to "rahmenauf.prg", cbm
+
+*=$c000
+
+n=67
+
+!src "macros.a"
+
+; ==================================================================
+; Initialisierung + Rahmenöffnung, um PAGE-Problemen vorzubeugen
+; ==================================================================
+
+          jmp START
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+OPEN_BORDER:
+
+          ldy #0
+          lda #n-4
+-         cmp $d012
+          bne -
+
+          +WAIT 54
+
+          lda $d012
+          cmp #n-3
+          beq +
+          +WAIT 4
+
++         +WAIT 52
+
+          lda $d012
+          cmp #n-2
+          beq +
+          +WAIT 3
+
++         +WAIT 53
+
+          lda $d012
+          cmp #n-1
+          bne +
+
++         +WAIT 38
+
+          lda #$c0
+          ldx #$c8
+          sta $d016
+          stx $d016
+
+          sta $d016,y
+          stx $d016
+
+          +WAIT 7
+-         +WAIT 37
+
+          sta $d016
+          stx $d016
+
+          iny
+          cpy #6
+          bne -
+          rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+START:    ; Schutz gegen zweiten Aufruf
+          lda #$60
+          sta $c000
+
+          jsr COPY_ROM
+          jsr INIT_SPRITEDATA
+          jsr INIT_CURSOR
+          jmp INIT_IRQ
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+COPY_ROM:
+
+          ldy #0
+mark      lda $a000,y
+          sta $a000,y
+          lda $e000,y
+          sta $e000,y
+          iny
+          bne mark
+
+          inc mark+2
+          inc mark+5
+          inc mark+8
+          inc mark+11
+          bne mark
+
+          lda #53
+          sta 1
+
+          rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+INIT_SPRITEDATA:
+
+          ldy #$00
+-         lda #$ff
+          sta 704,y
+          lda #$00
+          sta 832,y
+          sta 896,y
+          sta 960,y
+          iny
+          cpy #63
+          bne -
+          rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+INIT_CURSOR:
+
+          lda #$00
+          sta crsr_mode
+          sta crsr_wait
+
+INIT_CURSOR2:
+          lda $d3
+          sta crsr_x
+          lda $d6
+          sta crsr_y
+
+          rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+INIT_IRQ:
+
+          sei
+
+          lda #n-23
+          sta $d012
+          lda $d011
+          and #$7f
+          sta $d011
+
+          lda $d01a
+          ora #$01
+          sta $d01a
+
+          lda #<IRQ
+          sta $0314
+          lda #>IRQ
+          sta $0315
+
+          lda $d019
+          sta $d019
+
+          cli
+          rts
+
+; ==================================================================
+; Variablen
+; ==================================================================
+
+crsr_in_frame !by 0
+crsr_x        !by 0
+crsr_y        !by 0
+crsr_mode     !by 0
+crsr_wait     !by 0
+crsr_moved    !by 0
+crsr_pos      !by 3
+crsr_chr      !by 32, 32, 32
+crsr_col      !by 14, 14, 14
+
+mode_tab      !by 128, 64, 192, 32, 32, 32, 96, 16, 16, 16, 32, 32, 0
+color_tab     !by 144, 5, 28, 159, 156, 30, 31, 158
+              !by 129, 149, 150, 151, 152, 153, 154, 155
+
+; ==================================================================
+; IRQ
+; ==================================================================
+
+IRQ:      lda $d019
+          bmi vic_irq
+
+          lda $dc0d
+          cli
+          jmp $ea31
+
+vic_irq   jsr RESTORE_SPRITES
+          jsr OPEN_BORDER
+          jmp FINISH_IRQ
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+RESTORE_SPRITES:
+
+          jsr RESTORE_SPRITE_DATA
+          jmp RESTORE_VIC_REGISTERS
+
+RESTORE_SPRITE_DATA:
+
+          lda #13
+          sta 2044
+          lda #14
+          sta 2045
+          lda #15
+          sta 2046
+          lda #11
+          sta 2047
+
+          lda crsr_in_frame
+          beq +
+
+          lda #1
+          jsr PAINT_CURSOR
+          lda #2
+          jsr PAINT_CURSOR
+          lda #3
+          jsr PAINT_CURSOR
+
++         rts
+
+RESTORE_VIC_REGISTERS:
+
+          lda #$f0
+          sta $d015
+          lda #n-1
+          sta 53257
+          sta 53259
+          sta 53261
+          lda #n-2
+          sta 53263
+
+          lda #0
+          sta 53256
+          lda #8
+          sta 53258
+          lda #16
+          sta 53260
+          lda #88
+          sta 53262
+          lda #128
+          sta 53264
+
+          sta 53277
+          lda #0
+          sta 53271
+          sta 53276
+
+;          lda crsr_col
+;          sta 53291
+;          lda crsr_col+1
+;          sta 53292
+;          lda crsr_col+2
+;          sta 53293
+          lda 53280
+          sta 53294
+          rts
+
+PAINT_CURSOR:
+
+          tax
+          lsr
+          ror
+          ror
+          tay
+          cpx crsr_pos
+          beq +
+          clc
+          bcc ++
++         lda $CF
+          lsr
+++        lda crsr_col-1,x
+          bcc +
+          lda $0286
++         sta 53290,x
+          lda crsr_chr-1,x
+          bcc +
+          eor #$80
++         ldx #$00
+          stx chrloop+2
+          asl
+          rol chrloop+2
+          asl
+          rol chrloop+2
+          asl
+          rol chrloop+2
+          sta chrloop+1
+          lda chrloop+2
+          clc
+          adc #$d0
+          sta chrloop+2
+
+          lda $01
+          and #%11111011
+          sta $01
+
+          ldx #$00
+chrloop   lda $0000,x
+          sta $0300,y
+          iny
+          iny
+          iny
+          inx
+          cpx #$08
+          bne chrloop
+
+          lda $01
+          ora #%00000100
+          sta $01
+
+          rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+FINISH_IRQ:
+
+          lda $d019
+          sta $d019
+          cli
+
+          jsr WAIT_CURSOR
+
+          lda crsr_in_frame
+          bne frame
+
+          jsr MOVE_CURSOR
+          jmp finish
+
+frame     cmp #2
+          beq finish
+          jsr INIT_CURSOR
+
+          lda $CF
+          bne finish
+          dec crsr_pos
+          bne finish
+          inc crsr_in_frame
+          jmp ENDE
+
+finish    sei
+          pla
+          tay
+          pla
+          tax
+          pla
+          rti
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+WAIT_CURSOR:
+
+          lda crsr_moved
+          beq +
+
+          dec crsr_moved
+          jsr INIT_CURSOR2
+
++         lda $d3
+          cmp crsr_x
+          bne reset_crsr_wait
+
+          lda $d6
+          cmp crsr_y
+          bne reset_crsr_wait
+
+          dec crsr_wait
+          bne do_nothing
+
+          ldx crsr_mode
+          lda mode_tab,x
+          sta crsr_wait
+          bne +
+          lda #$02
+          sta crsr_mode
++         inc crsr_mode
+
+          rts
+
+reset_crsr_wait:
+          jsr INIT_CURSOR
+
+do_nothing:
+          pla
+          pla
+          jmp finish
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+MOVE_CURSOR:
+
+          lda $d3
+          beq +
+
+          lda #$9d
+          bne move_crsr
+
++         lda $d6
+          cmp #(n-51)/8
+          beq +
+
+          lda #$22
+          ror
+move_crsr sta $0277
+          inc $c6
+          inc crsr_moved
+-         rts
+
++         lda $cf
+          bne -
+          jmp CURSOR_TO_FRAME
+
+; ==================================================================
+; Hilfroutinen
+; ==================================================================
+
+CURSOR_TO_FRAME:
+
+          inc crsr_in_frame
+
+          sei
+          lda #$4C
+          sta $ea40
+          lda #<MY_CURSOR
+          sta $ea41
+          lda #>MY_CURSOR
+          sta $ea42
+
+          lda #<MY_KEY
+          sta $e5cb
+          lda #>MY_KEY
+          sta $e5cc
+
+          cli
+
+          rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+CURSOR_TO_SCREEN
+
+          sei
+
+          lda $cf
+          pha
+          lsr $cf
+          lda #3
+          jsr PAINT_CURSOR
+          pla
+          sta $cf
+
+          lda #$A4
+          sta $ea40
+          lda #$D3
+          sta $ea41
+          lda #$46
+          sta $ea42
+
+          lda #$16
+          sta $e5cb
+          lda #$E7
+          sta $e5cc
+
+          cli
+
+          dec crsr_in_frame
+
+          jmp INIT_CURSOR
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+MY_CURSOR:
+          lsr $CF
+          bcs +
+          inc $CF
++         jmp $ea61
+
+
+MY_KEY:   sta $d7
+          lda #$00
+          sta $cf
+          sta $d0
+          lda $d7
+          cmp #$1d
+          bne ++
+
+cursor_right
+          ldx crsr_pos
+          cpx #3
+          beq +
+          inx
+          stx crsr_pos
+          jmp INIT_CURSOR
++         jmp CURSOR_TO_SCREEN
+
+++        cmp #$9d
+          bne ++
+          ldx crsr_pos
+          cpx #1
+          beq +
+          dex
+          stx crsr_pos
+          jmp INIT_CURSOR
++         rts
+
+++        cmp #$13
+          bne ++
+          jsr $e566
+          jmp CURSOR_TO_SCREEN
+
+++        cmp #$93
+          bne ++
+          jsr $e544
+          lda #32
+          sta crsr_chr
+          sta crsr_chr+1
+          sta crsr_chr+2
+          jmp CURSOR_TO_SCREEN
+
+++        ldx #$00
+-         cmp color_tab,x
+          beq +
+          inx
+          cpx #16
+          bne -
+          beq ++
++         stx $0286
+          jmp INIT_CURSOR
+
+++        cmp #$20
+          bcc ++
+          cmp #$60
+          bcs ++
+          and #$3f
+ausgabe   ldx $c7
+          beq +
+          ora #$80
++         ldx crsr_pos
+          sta crsr_chr-1,x
+          lda $0286
+          sta crsr_col-1,x
+          jmp cursor_right
+
+++        cmp #$80
+          bcc ++
+          and #$7f
+          cmp #$20
+          bcc ++
+          ora #$40
+          jmp ausgabe
+
+++        cmp #$12
+          bne ++
+          sta $c7
+          jmp INIT_CURSOR
+
+++        cmp #$92
+          bne ++
+          lda #$00
+          sta $c7
+          jmp INIT_CURSOR
+
+++        jmp INIT_CURSOR
+
+; ==================================================================
+; Ende
+; ==================================================================
+
+ENDE      sei
+          lda #$7f
+          sta $dc0d
+          cli
+-         jmp -

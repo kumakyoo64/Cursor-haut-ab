@@ -1,0 +1,35 @@
+!macro WAIT .c {
+  !if .c>7 {
+    cmp ($00,X)
+    +WAIT .c-6
+  } else {
+    !if .c=7 {
+      cmp ($00),Y
+      nop
+    } else {
+      !if .c=6 {
+        cmp ($00,X)
+      } else {
+        !if .c=5 {
+          cmp ($00),Y
+        } else {
+          !if .c=4 {
+            cmp $00,X
+          } else {
+            !if .c=3 {
+              cmp $00
+            } else {
+              !if .c=2 {
+                nop
+              } else {
+                !if .c=1 {
+                  !serious "cannot wait 1 cycle"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
